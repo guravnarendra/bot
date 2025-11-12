@@ -1,10 +1,12 @@
 const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
 const moment = require('moment');
+const fetch = require('node-fetch');
 
 // Configuration - Get token from environment variable for security
 const BOT_TOKEN = "8284891252:AAG8fWcoprmDxe220rz17gD8tg7l32CwD0A";
 const PORT = process.env.PORT || 3000;
+const TARGET_URL = "https://bot-pyjx.onrender.com/";
 
 // Create Express app for health checks
 const app = express();
@@ -23,6 +25,17 @@ console.log = function(message) {
   originalConsoleLog.apply(console, arguments);
 };
 
+// Ping function to keep the app alive
+async function ping() {
+  try {
+    const res = await fetch(TARGET_URL);
+    console.log(`[${new Date().toISOString()}] Ping: ${res.status}`);
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] Error:`, err.message);
+  }
+}
+
+// Setup routes
 app.get('/', (req, res) => {
   res.send("🤖 Auto Join Bot is running!");
 });
@@ -97,7 +110,7 @@ class AdvancedJoinBot {
         welcomeText
       );
     } catch (error) {
-      console.warning(`⚠️ Could not send welcome: ${error.message}`);
+      console.warn(`⚠️ Could not send welcome: ${error.message}`);
     }
   }
   
@@ -112,7 +125,7 @@ class AdvancedJoinBot {
     } catch (error) {
       // Only log if it's not a permission error (common for channels)
       if (!error.message.includes('administrator rights')) {
-        console.warning(`⚠️ Channel notification failed: ${error.message}`);
+        console.warn(`⚠️ Channel notification failed: ${error.message}`);
       }
     }
   }
@@ -165,6 +178,15 @@ function runWebServer() {
   console.log(`🌐 Express server starting on http://0.0.0.0:${PORT}`);
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`✅ Server is running on port ${PORT}`);
+    
+    // Start ping interval after server is running
+    console.log(`🔄 Starting ping service to ${TARGET_URL} every 5 minutes`);
+    
+    // Ping immediately
+    ping();
+    
+    // Ping every 5 minutes (300,000 milliseconds)
+    setInterval(ping, 5 * 60 * 1000);
   });
 }
 
