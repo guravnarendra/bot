@@ -1,28 +1,24 @@
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, ChatJoinRequestHandler
 import logging
-from datetime import datetime
-import sys
 import os
+import asyncio
 from flask import Flask
+import threading
 
-# Configuration - Get token from environment variable for security
-BOT_TOKEN = "8284891252:AAG8fWcoprmDxe220rz17gD8tg7l32CwD0A"
+# Configuration - Get token from environment variable
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '8317002546:AAH9W9ieBPil6HGKm_K3yikJ7MPtvJ5hR1Q')
 
-# Setup logging to suppress unnecessary logs
+# Setup clean logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    format='%(message)s'
 )
 
-# Suppress all unnecessary logs
+# Suppress spam logs
 logging.getLogger('httpx').setLevel(logging.WARNING)
 logging.getLogger('httpcore').setLevel(logging.WARNING)
 logging.getLogger('telegram').setLevel(logging.WARNING)
-logging.getLogger('apscheduler').setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
@@ -38,146 +34,79 @@ def health():
     return "✅ Bot is healthy!"
 
 class AdvancedJoinBot:
-    def __init__(self, token):
-        self.application = Application.builder().token(token).build()
+    def __init__(self):
+        self.application = Application.builder().token(BOT_TOKEN).build()
         self.approved_count = 0
-        self.start_time = datetime.now()
         self.setup_handlers()
-        
-        # Print startup message
-        print("🚀 Advanced Join Bot Started!")
-        print(f"⏰ Started at: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"🔑 Token: {BOT_TOKEN[:10]}...")  # Only show first 10 chars for security
+        print("🚀 Advanced Join Bot Initialized!")
     
     def setup_handlers(self):
         self.application.add_handler(ChatJoinRequestHandler(self.handle_join_request))
         self.application.add_handler(CommandHandler("start", self.start_command))
-        self.application.add_handler(CommandHandler("status", self.status_command))
     
     async def handle_join_request(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Auto-approve join requests with enhanced features"""
+        user = update.chat_join_request.from_user
+        chat = update.chat_join_request.chat
+        
+        await update.chat_join_request.approve()
+        self.approved_count += 1
+        
+        username = user.username if user.username else "NoUsername"
+        logger.info(f"📥 {user.first_name} (@{username}) joined | Total: {self.approved_count}")
+        
+        # Send welcome
         try:
-            user = update.chat_join_request.from_user
-            chat = update.chat_join_request.chat
-            
-            # INSTANT APPROVAL
-            await update.chat_join_request.approve()
-            
-            # Update counter
-            self.approved_count += 1
-            
-            # Calculate stats for logging
-            uptime = datetime.now() - self.start_time
-            hours = uptime.total_seconds() / 3600
-            rate_per_hour = self.approved_count / hours if hours > 0 else 0
-            
-            # Single line log with all info
-            username = user.username if user.username else "NoUsername"
-            logger.info(f"📥 {user.first_name} (@{username}) joined | Total: {self.approved_count} | Rate: {rate_per_hour:.1f}/hour")
-            
-            # Send welcome to user
-            await self.send_welcome_message(context, user, chat)
-            
-            # Send notification to channel
-            await self.send_channel_notification(context, chat, user)
-            
+            welcome_text = f"Welcome @{username} to {chat.title if chat.title else 'the channel'}!"
+            await context.bot.send_message(chat_id=user.id, text=welcome_text)
         except Exception as e:
-            logger.error(f"❌ Error: {e}")
-    
-    async def send_welcome_message(self, context, user, chat):
-        """Send welcome message to the user"""
-        try:
-            welcome_text = f"Welcome @{user.username if user.username else user.first_name} to {chat.title if chat.title else chat.username}!"
-            
-            await context.bot.send_message(
-                chat_id=user.id,
-                text=welcome_text
-            )
-        except Exception as e:
-            logger.warning(f"⚠️ Could not send welcome: {e}")
-    
-    async def send_channel_notification(self, context, chat, user):
-        """Send notification to channel about new member"""
-        try:
-            notification = f"Welcome @{user.username if user.username else user.first_name} to {chat.title if chat.title else chat.username}!"
-            
-            await context.bot.send_message(
-                chat_id=chat.id,
-                text=notification
-            )
-        except Exception as e:
-            # Only log if it's not a permission error (common for channels)
-            if "administrator rights" not in str(e):
-                logger.warning(f"⚠️ Channel notification failed: {e}")
+            logger.warning(f"⚠️ Welcome failed: {e}")
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text(
-            "🤖 **Auto Join Bot**\n\n"
-            "I automatically accept join requests for our private channel!\n\n"
-            "✅ **Status:** ACTIVE\n"
-        )
-    
-    async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        uptime = datetime.now() - self.start_time
-        await update.message.reply_text(
-            f"🤖 **Bot Status**\n\n"
-            f"✅ **Status:** Running\n"
-            f"👥 **Total Approved:** {self.approved_count}\n"
-            f"⏰ **Uptime:** {str(uptime).split('.')[0]}\n"
-            f"🚀 **Host:** Render Cloud"
-        )
+        await update.message.reply_text("🤖 Auto Join Bot - Status: ACTIVE ✅")
     
     def run(self):
-        # For Render, we need to use webhooks or polling with proper setup
-        # Using polling for simplicity on Render
         print("🔄 Starting polling...")
         self.application.run_polling(
             drop_pending_updates=True,
             allowed_updates=Update.ALL_TYPES
         )
 
-def run_bot():
-    """Function to run the bot"""
-    if not BOT_TOKEN:
-        print("❌ ERROR: BOT_TOKEN environment variable is not set!")
-        return
-    
-    bot = AdvancedJoinBot(BOT_TOKEN)
-    bot.run()
-
-def run_web_server():
-    """Run Flask web server for health checks"""
-    port = 3000
-    print(f"🌐 Flask server starting on http://0.0.0.0:{port}")
+def run_flask():
+    """Run Flask web server"""
+    port = int(os.environ.get('PORT', 3000))
+    print(f"🌐 Flask server starting on port {port}")
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
+def run_bot():
+    """Run Telegram bot"""
+    if not BOT_TOKEN:
+        print("❌ ERROR: BOT_TOKEN not set!")
+        return
+    
+    try:
+        bot = AdvancedJoinBot()
+        bot.run()
+    except Exception as e:
+        print(f"❌ Bot error: {e}")
+
 if __name__ == '__main__':
-    # Check if we're running on Render (has PORT environment variable)
-    if os.environ.get('RENDER', False) or os.environ.get('PORT'):
+    # Check if running on Render
+    if os.environ.get('RENDER') or os.environ.get('PORT'):
         print("🌐 Render environment detected!")
         
-        # Import threading to run both bot and web server
-        import threading
+        # Start Flask in a thread
+        flask_thread = threading.Thread(target=run_flask, daemon=True)
+        flask_thread.start()
         
-        # Start web server in a separate thread
-        web_thread = threading.Thread(target=run_web_server, daemon=True)
-        web_thread.start()
-        
-        # Start bot in main thread (asyncio needs main thread)
+        # Run bot in main thread
         run_bot()
     else:
-        # Local development - run both bot and web server
+        # Local development
         print("💻 Local development environment")
         
-        # Import threading to run both bot and web server
-        import threading
+        # Start Flask in a thread
+        flask_thread = threading.Thread(target=run_flask, daemon=True)
+        flask_thread.start()
         
-        # Start web server in a separate thread (daemon thread)
-        web_thread = threading.Thread(target=run_web_server, daemon=True)
-        web_thread.start()
-        
-        print("🌐 Flask server started in background thread")
-        print("🤖 Starting Telegram bot in main thread...")
-        
-        # Start bot in main thread (asyncio needs main thread)
+        # Run bot in main thread
         run_bot()
