@@ -1,8 +1,7 @@
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, ChatJoinRequestHandler
+from telegram.ext import Updater, CommandHandler, CallbackContext, ChatJoinRequestHandler
 import logging
 import os
-import asyncio
 from flask import Flask
 import threading
 
@@ -35,20 +34,25 @@ def health():
 
 class AdvancedJoinBot:
     def __init__(self):
-        self.application = Application.builder().token(BOT_TOKEN).build()
+        self.updater = Updater(BOT_TOKEN, use_context=True)
         self.approved_count = 0
         self.setup_handlers()
         print("🚀 Advanced Join Bot Initialized!")
     
     def setup_handlers(self):
-        self.application.add_handler(ChatJoinRequestHandler(self.handle_join_request))
-        self.application.add_handler(CommandHandler("start", self.start_command))
+        # For python-telegram-bot v13, we use different approach
+        dp = self.updater.dispatcher
+        
+        # Add join request handler
+        dp.add_handler(ChatJoinRequestHandler(self.handle_join_request))
+        dp.add_handler(CommandHandler("start", self.start_command))
     
-    async def handle_join_request(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    def handle_join_request(self, update: Update, context: CallbackContext):
         user = update.chat_join_request.from_user
         chat = update.chat_join_request.chat
         
-        await update.chat_join_request.approve()
+        # Approve the request
+        update.chat_join_request.approve()
         self.approved_count += 1
         
         username = user.username if user.username else "NoUsername"
@@ -57,19 +61,18 @@ class AdvancedJoinBot:
         # Send welcome
         try:
             welcome_text = f"Welcome @{username} to {chat.title if chat.title else 'the channel'}!"
-            await context.bot.send_message(chat_id=user.id, text=welcome_text)
+            context.bot.send_message(chat_id=user.id, text=welcome_text)
         except Exception as e:
             logger.warning(f"⚠️ Welcome failed: {e}")
     
-    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("🤖 Auto Join Bot - Status: ACTIVE ✅")
+    def start_command(self, update: Update, context: CallbackContext):
+        update.message.reply_text("🤖 Auto Join Bot - Status: ACTIVE ✅")
     
     def run(self):
         print("🔄 Starting polling...")
-        self.application.run_polling(
-            drop_pending_updates=True,
-            allowed_updates=Update.ALL_TYPES
-        )
+        self.updater.start_polling()
+        print("✅ Bot is now running!")
+        self.updater.idle()
 
 def run_flask():
     """Run Flask web server"""
@@ -88,6 +91,8 @@ def run_bot():
         bot.run()
     except Exception as e:
         print(f"❌ Bot error: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == '__main__':
     # Check if running on Render
