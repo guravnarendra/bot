@@ -1,5 +1,5 @@
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, ChatJoinRequestHandler
+from telegram.ext import Updater, CommandHandler, CallbackContext, ChatJoinRequestHandler
 import logging
 from datetime import datetime
 import sys
@@ -44,7 +44,8 @@ def bot_status():
 class AdvancedJoinBot:
     def __init__(self, token):
         self.token = token
-        self.application = Application.builder().token(token).build()
+        self.updater = Updater(token, use_context=True)
+        self.dispatcher = self.updater.dispatcher
         self.approved_count = 0
         self.start_time = datetime.now()
         self.setup_handlers()
@@ -54,62 +55,64 @@ class AdvancedJoinBot:
         print(f"🔑 Token: {self.token[:10]}...")
     
     def setup_handlers(self):
-        self.application.add_handler(ChatJoinRequestHandler(self.handle_join_request))
-        self.application.add_handler(CommandHandler("start", self.start_command))
-        self.application.add_handler(CommandHandler("status", self.status_command))
+        self.dispatcher.add_handler(ChatJoinRequestHandler(self.handle_join_request))
+        self.dispatcher.add_handler(CommandHandler("start", self.start_command))
+        self.dispatcher.add_handler(CommandHandler("status", self.status_command))
     
-    async def handle_join_request(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    def handle_join_request(self, update: Update, context: CallbackContext):
         try:
             user = update.chat_join_request.from_user
             chat = update.chat_join_request.chat
             
-            await update.chat_join_request.approve()
+            # INSTANT APPROVAL
+            update.chat_join_request.approve()
             self.approved_count += 1
             
             username = user.username if user.username else "NoUsername"
             logger.info(f"📥 {user.first_name} (@{username}) joined | Total: {self.approved_count}")
             
-            await self.send_welcome_message(context, user, chat)
-            await self.send_channel_notification(context, chat, user)
+            self.send_welcome_message(context, user, chat)
+            self.send_channel_notification(context, chat, user)
             
         except Exception as e:
             logger.error(f"❌ Error: {e}")
     
-    async def send_welcome_message(self, context, user, chat):
+    def send_welcome_message(self, context, user, chat):
         try:
             welcome_text = f"Welcome @{user.username if user.username else user.first_name} to {chat.title if chat.title else chat.username}!"
-            await context.bot.send_message(chat_id=user.id, text=welcome_text)
+            context.bot.send_message(chat_id=user.id, text=welcome_text)
         except Exception as e:
             logger.warning(f"⚠️ Could not send welcome: {e}")
     
-    async def send_channel_notification(self, context, chat, user):
+    def send_channel_notification(self, context, chat, user):
         try:
             notification = f"Welcome @{user.username if user.username else user.first_name} to {chat.title if chat.title else chat.username}!"
-            await context.bot.send_message(chat_id=chat.id, text=notification)
+            context.bot.send_message(chat_id=chat.id, text=notification)
         except Exception as e:
             if "administrator rights" not in str(e):
                 logger.warning(f"⚠️ Channel notification failed: {e}")
     
-    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("🤖 **Auto Join Bot**\n\nI automatically accept join requests!\n\n✅ **Status:** ACTIVE")
+    def start_command(self, update: Update, context: CallbackContext):
+        update.message.reply_text("🤖 **Auto Join Bot**\n\nI automatically accept join requests!\n\n✅ **Status:** ACTIVE")
     
-    async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    def status_command(self, update: Update, context: CallbackContext):
         uptime = datetime.now() - self.start_time
-        await update.message.reply_text(f"🤖 **Bot Status**\n\n✅ **Running**\n👥 **Approved:** {self.approved_count}\n⏰ **Uptime:** {str(uptime).split('.')[0]}")
+        update.message.reply_text(f"🤖 **Bot Status**\n\n✅ **Running**\n👥 **Approved:** {self.approved_count}\n⏰ **Uptime:** {str(uptime).split('.')[0]}")
     
     def run(self):
         print("🔄 Starting bot polling...")
-        self.application.run_polling(drop_pending_updates=True)
+        self.updater.start_polling()
+        self.updater.idle()
 
 def run_flask():
-    port = int(os.environ.get('PORT', 3000))
-    print(f"🌐 Flask server starting on http://localhost:{port}")
+    port = int(os.environ.get('PORT', 10000))
+    print(f"🌐 Flask server starting on port {port}")
     print(f"📊 Health check: http://localhost:{port}/health")
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 if __name__ == '__main__':
-    # Always run both locally for testing
-    print("💻 Local development - starting both bot and Flask server...")
+    # Always run both locally and on Render
+    print("🚀 Starting both bot and Flask server...")
     
     # Start Flask in background thread
     flask_thread = threading.Thread(target=run_flask, daemon=True)
